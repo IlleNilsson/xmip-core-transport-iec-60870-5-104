@@ -29,6 +29,7 @@ use std::time::Duration;
 
 pub use apci::{Apdu, MAX_ASDU};
 use transport::error::{Result, classify, protocol_error};
+use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
 use transport::socket;
 use transport::{Arrived, Directions, Transport};
 
@@ -168,6 +169,7 @@ impl Controller {
     }
 }
 
+#[derive(Clone)]
 pub struct Iec104Transport {
     bind: String,
     timeout: Option<Duration>,
@@ -260,9 +262,103 @@ impl Transport for Iec104Transport {
     }
 }
 
+impl Iec104Transport {
+    /// Both ends on this machine: an ephemeral local port, the loopback
+    /// timeout on either station.
+    #[must_use]
+    pub fn loopback() -> Self {
+        Self::new("127.0.0.1:0").timing_out_after(LOOPBACK_TIMEOUT)
+    }
+}
+
+/// A bound controlled station waiting for its one controlling station: the
+/// ASDUs acknowledged in sequence and joined in order into one Stream, until
+/// STOPDT.
+struct Listening {
+    transport: Iec104Transport,
+    listener: TcpListener,
+    address: String,
+}
+
+impl FarEnd for Listening {
+    fn address(&self) -> &str {
+        &self.address
+    }
+
+    fn take_one(self: Box<Self>) -> Result<Arrived> {
+        let mut station = self.transport.accept_one(&self.listener)?;
+        let mut origin = String::from("iec104://");
+        let mut bytes = Vec::new();
+        while let Some(arrived) = station.next_asdu()? {
+            origin = arrived.origin_uri;
+            bytes.extend_from_slice(&arrived.bytes);
+        }
+        Ok(Arrived::new(origin, bytes))
+    }
+}
+
+/// A Stream longer than one ASDU travels as I frames in sequence on one
+/// connection, each acknowledged before the next goes, STOPDT closing.
+impl Loopback for Iec104Transport {
+    fn far_end(&self) -> Result<Box<dyn FarEnd>> {
+        let (listener, address) = self.bind()?;
+        Ok(Box::new(Listening {
+            transport: self.clone(),
+            listener,
+            address,
+        }))
+    }
+
+    fn send_to(&self, address: &str, payload: &[u8]) -> Result<()> {
+        let mut controller = self.clone().connect(address)?;
+        for asdu in payload.chunks(MAX_ASDU) {
+            controller.send_asdu(asdu)?;
+        }
+        controller.stop()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shapes a protocol breaks on, as the Playground lists them.
+    fn edge_payloads() -> Vec<(&'static str, Vec<u8>)> {
+        vec![
+            ("empty", Vec::new()),
+            ("one byte", vec![0x2a]),
+            ("every byte", (0..=255).collect()),
+            ("nul run", vec![0; 512]),
+            ("high bytes", vec![0xff; 512]),
+            ("crlf storm", b"\r\n".repeat(400)),
+        ]
+    }
+
+    #[test]
+    fn a_loopback_round_carries_a_stream_as_asdus() {
+        let loopback = Iec104Transport::loopback();
+        let arrived = loopback.round(b"asdu").expect("round");
+        assert_eq!(arrived.bytes, b"asdu");
+        assert!(arrived.origin_uri.starts_with("iec104://127.0.0.1:"));
+        assert!(arrived.origin_uri.ends_with("?send=0"));
+        let long = vec![0x2a; 3000];
+        let arrived = loopback.round(&long).expect("thirteen I frames");
+        assert_eq!(arrived.bytes, long);
+        assert!(arrived.origin_uri.ends_with("?send=12"));
+        assert!(loopback.ceiling().is_none());
+        assert!(loopback.refuses(&long).is_none());
+    }
+
+    #[test]
+    fn the_loopback_returns_the_edges_whole() {
+        let loopback = Iec104Transport::loopback();
+        for (name, bytes) in edge_payloads() {
+            let arrived = loopback
+                .round(&bytes)
+                .unwrap_or_else(|error| panic!("{name}: {error}"));
+            assert_eq!(arrived.bytes, bytes, "{name}");
+        }
+    }
 
     #[test]
     fn asdus_flow_in_sequence_and_are_acknowledged() {

@@ -273,7 +273,7 @@ impl Iec104Transport {
 }
 
 impl Accepting for Iec104Transport {
-    fn take_one(&self, listener: &TcpListener) -> Result<Arrived> {
+    fn take_one(self, listener: &TcpListener) -> Result<Arrived> {
         let mut station = self.accept_one(listener)?;
         let mut origin = String::from("iec104://");
         let mut bytes = Vec::new();
@@ -289,8 +289,7 @@ impl Accepting for Iec104Transport {
 /// connection, each acknowledged before the next goes, STOPDT closing.
 impl Loopback for Iec104Transport {
     fn far_end(&self) -> Result<Box<dyn FarEnd>> {
-        let (listener, address) = self.bind()?;
-        Ok(Box::new(Listening::new(self.clone(), listener, address)))
+        Ok(Box::new(Listening::new(self.clone(), self.bind()?)))
     }
 
     fn send_to(&self, address: &str, payload: &[u8]) -> Result<()> {

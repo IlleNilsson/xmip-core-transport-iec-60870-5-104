@@ -32,7 +32,8 @@ use transport::error::{Result, classify, protocol_error};
 use transport::listening::{Accepting, Listening};
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
 use transport::socket;
-use transport::{Arrived, Directions, Transport};
+use transport::{Arrived, Configured, Directions, Transport};
+use xcore::settings::{Applies, Kind, Presence, Read, Setting, Settings};
 
 /// The controlled station's side of one connection.
 pub struct Station {
@@ -263,6 +264,31 @@ impl Transport for Iec104Transport {
     }
 }
 
+impl Configured for Iec104Transport {
+    /// The address is where a Receive Location listens as the controlled
+    /// station, `0.0.0.0:2404` by the standard; a Send Location connects to
+    /// the station its target names.
+    const SETTINGS: &'static Settings = &Settings {
+        technology: env!("CARGO_PKG_NAME"),
+        settings: &[Setting {
+            name: "timeout",
+            kind: Kind::Duration,
+            presence: Presence::Optional,
+            meaning: "How long a connection is waited for, and a peer that stops mid-APDU \
+                      is waited on; unbounded when left out.",
+            applies: Applies::Both,
+        }],
+    };
+
+    fn configured(address: &str, settings: &Read) -> Result<Self> {
+        let transport = Self::new(address);
+        Ok(match settings.optional_duration("timeout") {
+            Some(timeout) => transport.timing_out_after(timeout),
+            None => transport,
+        })
+    }
+}
+
 impl Iec104Transport {
     /// Both ends on this machine: an ephemeral local port, the loopback
     /// timeout on either station.
@@ -305,6 +331,20 @@ impl Loopback for Iec104Transport {
 mod tests {
     use super::*;
     use transport::payload::edge_payloads;
+
+    #[test]
+    fn iec_60870_5_104_declares_its_settings_and_reads_through_them() {
+        use xcore::settings::Given;
+        assert_eq!(Iec104Transport::SETTINGS.problems(), Vec::<String>::new());
+        let given = [("timeout".to_string(), Given::Text("20s".to_string()))];
+        let built = Iec104Transport::open("0.0.0.0:2404", Applies::Receive, &given).expect("built");
+        assert_eq!(built.timeout, Some(Duration::from_secs(20)));
+        let given = [("t1".to_string(), Given::Text("15s".to_string()))];
+        let Err(refused) = Iec104Transport::open("0.0.0.0:2404", Applies::Send, &given) else {
+            panic!("t1 is not a setting");
+        };
+        assert!(refused.message.contains("\"t1\""), "{}", refused.message);
+    }
 
     #[test]
     fn a_loopback_round_carries_a_stream_as_asdus() {

@@ -29,6 +29,7 @@ use std::time::Duration;
 
 pub use apci::{Apdu, MAX_ASDU};
 use transport::error::{Result, classify, protocol_error};
+use transport::kept::Kept;
 use transport::listening::{Accepting, Listening};
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
 use transport::socket;
@@ -175,6 +176,8 @@ impl Controller {
 pub struct Iec104Transport {
     bind: String,
     timeout: Option<Duration>,
+    /// The listener the first receive binds, and every receive takes from.
+    receiving: Kept<TcpListener>,
 }
 
 impl Iec104Transport {
@@ -184,6 +187,7 @@ impl Iec104Transport {
         Self {
             bind: bind.into(),
             timeout: None,
+            receiving: Kept::new(),
         }
     }
 
@@ -246,10 +250,11 @@ impl Transport for Iec104Transport {
         Directions::BOTH
     }
 
-    /// One controlling station's ASDUs until it says STOPDT or closes.
+    /// One controlling station's ASDUs until it says STOPDT or closes, from
+    /// the listener the first receive bound and kept.
     fn receive(&self) -> Result<Vec<Arrived>> {
-        let (listener, _) = self.bind()?;
-        let mut station = self.accept_one(&listener)?;
+        let listener = self.receiving.bound(|| self.bind())?;
+        let mut station = self.accept_one(listener)?;
         let mut arrived = Vec::new();
         while let Some(asdu) = station.next_asdu()? {
             arrived.push(asdu);
@@ -331,6 +336,16 @@ impl Loopback for Iec104Transport {
 mod tests {
     use super::*;
     use transport::payload::edge_payloads;
+
+    #[test]
+    fn every_receive_takes_from_the_listener_the_first_bound() {
+        let receiver = Iec104Transport::loopback();
+        receiver.receiving.bound(|| receiver.bind()).expect("bound");
+        let address = receiver.receiving.address().expect("address");
+        transport::kept::held_across_receives(&receiver, address, 5, |at, payload| {
+            Iec104Transport::loopback().send(at, payload)
+        });
+    }
 
     #[test]
     fn iec_60870_5_104_declares_its_settings_and_reads_through_them() {

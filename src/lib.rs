@@ -52,7 +52,7 @@ impl Station {
     /// # Errors
     /// Where the connection broke, nothing arrived before the timeout, or
     /// the peer broke the protocol.
-    pub fn next_asdu(&mut self) -> Result<Option<Arrived>> {
+    fn next_asdu(&mut self) -> Result<Option<Arrived>> {
         loop {
             match apci::read(&mut self.stream)? {
                 Some(Apdu::U {
@@ -122,7 +122,7 @@ impl Controller {
     /// # Errors
     /// An ASDU over [`MAX_ASDU`], a peer that went away, or an
     /// acknowledgement that does not cover it.
-    pub fn send_asdu(&mut self, asdu: &[u8]) -> Result<()> {
+    fn send_asdu(&mut self, asdu: &[u8]) -> Result<()> {
         let send = self.sent;
         self.write(&Apdu::I {
             send,

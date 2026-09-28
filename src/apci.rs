@@ -11,7 +11,7 @@ use transport::error::{Result, classify, protocol_error};
 /// The start byte every APDU opens with.
 pub const START: u8 = 0x68;
 /// The most an APDU may be after the start and length bytes.
-pub const MAX_APDU: usize = 253;
+const MAX_APDU: usize = 253;
 /// The most ASDU one I frame carries: the APDU less the control field.
 pub const MAX_ASDU: usize = MAX_APDU - 4;
 

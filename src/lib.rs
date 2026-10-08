@@ -43,6 +43,7 @@ use std::time::Duration;
 
 pub use apci::{Apdu, MAX_ASDU};
 pub use station::{Asdu, Station};
+use transport::ArrivalIdentity;
 use transport::error::{Result, TransportError, classify, protocol_error};
 use transport::listening::{Accepting, Listening};
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
@@ -282,13 +283,17 @@ impl Accepting for Iec104Transport {
             origin = asdu.origin_uri;
             bytes.extend_from_slice(&asdu.bytes);
         }
-        Ok(Taken::new(origin, bytes))
+        Ok(Taken::new(origin, bytes).from_peer(station.peer()))
     }
 }
 
 /// A Stream longer than one ASDU travels as I frames in sequence on one
 /// connection, each acknowledged before the next goes, STOPDT closing.
 impl Loopback for Iec104Transport {
+    fn arrival_identity(&self) -> ArrivalIdentity {
+        ArrivalIdentity::PEER
+    }
+
     fn far_end(&self) -> Result<Box<dyn FarEnd>> {
         Ok(Box::new(Listening::new(self.clone(), self.bind()?)))
     }

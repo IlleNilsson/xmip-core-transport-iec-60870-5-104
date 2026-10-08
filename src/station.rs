@@ -63,6 +63,12 @@ impl Station {
         }
     }
 
+    /// The peer the connection is from, as the socket reported it.
+    #[must_use]
+    pub const fn peer(&self) -> SocketAddr {
+        self.peer
+    }
+
     /// The next ASDU the controlling station sends, not yet acknowledged,
     /// or `None` when it said STOPDT or closed. STARTDT and TESTFR are
     /// answered on the way; an I frame before STARTDT is a protocol error.
@@ -159,11 +165,9 @@ impl Station {
             }),
             Verdict::Failed => held.shut(),
         });
-        Ok(Some(Arrived::whole(
-            asdu.origin_uri,
-            asdu.bytes,
-            acknowledgement,
-        )))
+        Ok(Some(
+            Arrived::whole(asdu.origin_uri, asdu.bytes, acknowledgement).from_peer(self.peer),
+        ))
     }
 
     /// One turn for a kept listener: the next arrival, or the controlling

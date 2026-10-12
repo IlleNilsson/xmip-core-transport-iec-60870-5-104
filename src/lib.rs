@@ -215,6 +215,10 @@ impl Transport for Iec104Transport {
         transport::Arrivals::Ordered("a connection's ASDUs are acknowledged by sequence number")
     }
 
+    fn waiting(&self) -> transport::Waiting {
+        transport::Waiting::Waits("the listener waits for an ASDU")
+    }
+
     /// The next ASDU from whichever controlling station sends first, on the
     /// listener the first receive bound and kept, whole. The station waits
     /// for its S frame until the receive cycle has ended: sent on accepted;

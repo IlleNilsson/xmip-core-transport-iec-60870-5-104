@@ -226,7 +226,7 @@ impl Transport for Iec104Transport {
     /// acknowledged, neither sent again ([`Station::next_arrival`]); on
     /// failed the connection is closed unacknowledged, and the station
     /// sends it again.
-    fn receive(&self) -> Result<Vec<Arrived>> {
+    fn receive_up_to(&self, _most: usize) -> Result<Vec<Arrived>> {
         let arrived = self.receiving.next(
             || self.bind(),
             self.timeout,
@@ -236,7 +236,12 @@ impl Transport for Iec104Transport {
         Ok(vec![arrived])
     }
 
-    fn send(&self, target: &str, bytes: &[u8]) -> Result<()> {
+    fn sending(&self) -> transport::Sending {
+        transport::Sending::Gathered("one APDU carries the whole body")
+    }
+
+    fn send_from(&self, target: &str, outgoing: transport::Outgoing<'_>) -> Result<()> {
+        let bytes: &[u8] = &outgoing.gather()?;
         let mut controller = self.connect(target)?;
         controller.send_asdu(bytes)?;
         controller.stop()

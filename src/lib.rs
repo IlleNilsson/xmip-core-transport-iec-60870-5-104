@@ -6,7 +6,7 @@
 //! objects — is a contract's.
 //!
 //! IEC 104 is the grid's telecontrol protocol: substations report and take
-//! commands from control centres, over TCP on port 2404. The controlled
+//! commands from control centers, over TCP on port 2404. The controlled
 //! station listens; the controlling station connects, says STARTDT, and
 //! information frames flow both ways, each acknowledged by sequence number.
 //! A Receive Location listens as the controlled station and hands each I

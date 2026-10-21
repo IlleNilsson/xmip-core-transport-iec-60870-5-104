@@ -32,6 +32,11 @@
 //! controlling station send what was not acknowledged again. Each ASDU
 //! arrives whole, and the connection is kept for the station's next.
 //!
+//! **A Send Location keeps its connection too**: one per controlled station
+//! in the capability's pool (`transport::Pool`), STARTDT said once and I
+//! frame after I frame in sequence on it. Until 2026-10-21 every send
+//! connected, said STARTDT, sent its one I frame and STOPDT.
+//!
 //! The origin URI carries what the APCI knew: `iec104://peer?send=5`.
 
 pub mod apci;
@@ -47,15 +52,28 @@ use transport::ArrivalIdentity;
 use transport::error::{Result, TransportError, classify, protocol_error};
 use transport::listening::{Accepting, Listening};
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
+use transport::pool::alive;
 use transport::serving::Serving;
 use transport::socket;
 use transport::{Arrived, Configured, Directions, Taken, Transport};
+use transport::{Pool, Pooled};
 use xcore::settings::{Applies, Kind, Presence, Read, Setting, Settings};
 
 /// The controlling station's side of one connection, data transfer started.
 pub struct Controller {
     stream: TcpStream,
     sent: u16,
+    /// Whether the station closed the connection unacknowledged: its
+    /// answer to the last ASDU, and the connection's end.
+    closed: bool,
+}
+
+impl Pooled for Controller {
+    /// Kept while the station holds the connection open; a TESTFR it sent
+    /// meanwhile is answered by the next send.
+    fn usable(&mut self) -> bool {
+        !self.closed && alive(&self.stream)
+    }
 }
 
 impl Controller {
@@ -67,6 +85,15 @@ impl Controller {
     /// confirmation (permanent: the station refused it), or an
     /// acknowledgement that does not cover it.
     fn send_asdu(&mut self, asdu: &[u8]) -> Result<()> {
+        self.deliver(asdu)?
+    }
+
+    /// Send `asdu` as [`Controller::send_asdu`] does: `Ok(Ok(()))` where
+    /// the station acknowledged it, `Ok(Err(refusal))` where it answered —
+    /// a negative confirmation, the connection kept, or a close
+    /// unacknowledged, the connection's end — and `Err` where the
+    /// connection broke before an answer or the answer is not IEC 104's.
+    fn deliver(&mut self, asdu: &[u8]) -> Result<Result<()>> {
         let send = self.sent;
         self.write(&Apdu::I {
             send,
@@ -88,13 +115,13 @@ impl Controller {
                     self.write(&Apdu::S {
                         receive: (theirs + 1) & 0x7fff,
                     })?;
-                    return Err(TransportError::permanent(
+                    return Ok(Err(TransportError::permanent(
                         "the station confirmed the command negatively: refused, not to be \
                          sent again",
-                    ));
+                    )));
                 }
                 Some(Apdu::S { receive } | Apdu::I { receive, .. }) if receive == self.sent => {
-                    return Ok(());
+                    return Ok(Ok(()));
                 }
                 Some(Apdu::S { receive } | Apdu::I { receive, .. }) => {
                     return Err(protocol_error(format!(
@@ -109,9 +136,12 @@ impl Controller {
                 })?,
                 Some(Apdu::U { .. }) => {}
                 None => {
-                    return Err(TransportError::retryable(
+                    // The station's way of failing what it read: answered,
+                    // so not sent again at once on a new connection.
+                    self.closed = true;
+                    return Ok(Err(TransportError::retryable(
                         "the station closed before acknowledging: not taken, send it again",
-                    ));
+                    )));
                 }
             }
         }
@@ -141,6 +171,9 @@ impl Controller {
 pub struct Iec104Transport {
     bind: String,
     timeout: Option<Duration>,
+    /// The connection kept to each controlled station, data transfer
+    /// started, shared by every clone.
+    controllers: Pool<Controller>,
     /// The listener the first receive binds, and the controlling stations'
     /// connections kept open on it between their I frames.
     receiving: Serving<Station>,
@@ -153,6 +186,7 @@ impl Iec104Transport {
         Self {
             bind: bind.into(),
             timeout: None,
+            controllers: Pool::new(),
             receiving: Serving::new(),
         }
     }
@@ -189,7 +223,11 @@ impl Iec104Transport {
     /// STARTDT.
     pub fn connect(&self, target: &str) -> Result<Controller> {
         let stream = socket::connect_tcp(target, self.timeout)?;
-        let mut controller = Controller { stream, sent: 0 };
+        let mut controller = Controller {
+            stream,
+            sent: 0,
+            closed: false,
+        };
         controller.write(&Apdu::U {
             command: apci::STARTDT_ACT,
         })?;
@@ -240,11 +278,17 @@ impl Transport for Iec104Transport {
         transport::Sending::Gathered("one APDU carries the whole body")
     }
 
+    /// One I frame on the connection kept to the station at `target`, or on
+    /// a new one whose data transfer is started first. A negative
+    /// confirmation fails the send and keeps the connection; a close
+    /// unacknowledged fails it retryable and ends the connection.
     fn send_from(&self, target: &str, outgoing: transport::Outgoing<'_>) -> Result<()> {
         let bytes: &[u8] = &outgoing.gather()?;
-        let mut controller = self.connect(target)?;
-        controller.send_asdu(bytes)?;
-        controller.stop()
+        self.controllers.exchange(
+            target,
+            || self.connect(target),
+            |controller| controller.deliver(bytes),
+        )?
     }
 }
 
@@ -370,6 +414,41 @@ mod tests {
         assert!(!refused.retryable, "{refused}");
         assert!(refused.message.contains("negatively"), "{refused}");
         assert!(failed.retryable, "{failed}");
+    }
+
+    #[test]
+    fn a_hundred_sends_to_one_station_open_one_connection_and_every_receive_takes_from_it() {
+        // Until 2026-10-21 every send connected, said STARTDT, sent its one
+        // I frame and STOPDT.
+        const ROUNDS: u16 = 100;
+        let receiver = Iec104Transport::loopback();
+        let address = receiver
+            .receiving
+            .bound(|| receiver.bind())
+            .expect("bound")
+            .to_string();
+        let sender = std::thread::spawn(move || {
+            let sender = Iec104Transport::loopback();
+            let shared = sender.clone();
+            for round in 0..ROUNDS {
+                let by = if round % 2 == 0 { &sender } else { &shared };
+                by.send(&address, format!("a{round}").as_bytes())
+                    .expect("acknowledged");
+            }
+            sender.controllers.opened()
+        });
+        for round in 0..ROUNDS {
+            let taken = receiver.receive().expect("received").remove(0);
+            let taken = taken.taken().expect("acknowledged");
+            assert_eq!(taken.bytes, format!("a{round}").as_bytes());
+            assert!(
+                taken.origin_uri.ends_with(&format!("?send={round}")),
+                "{}: I frames in sequence, on one connection",
+                taken.origin_uri
+            );
+        }
+        assert_eq!(sender.join().expect("sender"), 1, "one connection");
+        assert_eq!(receiver.receiving.open(), 1);
     }
 
     #[test]

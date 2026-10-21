@@ -22,7 +22,12 @@ whole, and a Receive Location
 keeps the controlling stations' connections open between their I frames
 (`transport::serving::Serving`), taking the next ASDU from whichever sends
 first; until 2026-10-02 a receive read one station's ASDUs until it said
-STOPDT or closed, and acknowledged each as it read it.
+STOPDT or closed, and acknowledged each as it read it. A Send Location keeps
+its connection to each controlled station (`transport::Pool`), STARTDT said
+once and I frame after I frame in sequence on it; a negative confirmation
+keeps the connection, and a close unacknowledged ends it, the next send
+opening another. Until 2026-10-21 every send connected, said STARTDT, sent
+its one I frame and STOPDT.
 
 ## Toolchain
 

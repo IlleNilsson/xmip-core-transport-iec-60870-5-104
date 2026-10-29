@@ -308,6 +308,9 @@ impl Configured for Iec104Transport {
         }],
     };
 
+    /// The schemes a Location's address is entered with to choose this technology.
+    const SCHEMES: &'static [&'static str] = &["iec104"];
+
     fn configured(address: &str, settings: &Read) -> Result<Self> {
         let transport = Self::new(address);
         Ok(match settings.optional_duration("timeout") {

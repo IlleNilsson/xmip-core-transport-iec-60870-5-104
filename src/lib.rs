@@ -15,7 +15,7 @@
 //!
 //! What is here is the APCI, the start and test commands, and I frames
 //! acknowledged one at a time — the window `k` of one, which is what a
-//! Location that hands every ASDU to a Journey needs. The timeouts `t1` to
+//! Location that hands every ASDU on as a Message needs. The timeouts `t1` to
 //! `t3` and a wider window are the next layer; TLS, IEC 62351, is the
 //! transport capability's (ADR-0033).
 //!

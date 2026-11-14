@@ -249,6 +249,11 @@ impl Transport for Iec104Transport {
         Directions::BOTH
     }
 
+    /// The callers turned away at their own connection (`transport::serving`).
+    fn turned_away(&self) -> transport::Turned {
+        self.receiving.turned_away()
+    }
+
     fn arrivals(&self) -> transport::Arrivals {
         transport::Arrivals::Ordered("a connection's ASDUs are acknowledged by sequence number")
     }

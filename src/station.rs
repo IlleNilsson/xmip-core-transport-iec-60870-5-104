@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use transport::answer::Answer;
+use transport::deadline::Within;
 use transport::error::{Result, classify, protocol_error};
 use transport::serving::{Open, Turn};
 use transport::{Acknowledgement, Arrived, Verdict};
@@ -39,9 +40,10 @@ pub struct Asdu {
     receive: u16,
 }
 
-/// The controlled station's side of one connection.
+/// The controlled station's side of one connection, each read within its
+/// turn.
 pub struct Station {
-    stream: TcpStream,
+    stream: Within,
     peer: SocketAddr,
     received: u16,
     /// The send sequence number of the next I frame this station sends: a
@@ -53,7 +55,7 @@ pub struct Station {
 impl Station {
     /// A connection a controlling station opened from `peer`.
     #[must_use]
-    pub fn new(stream: TcpStream, peer: SocketAddr) -> Self {
+    pub fn new(stream: Within, peer: SocketAddr) -> Self {
         Self {
             stream,
             peer,
@@ -143,7 +145,7 @@ impl Station {
             return Ok(None);
         };
         // Let go without a verdict, the connection is shut, as on failed.
-        let held = Answer::held(&self.stream)?;
+        let held = Answer::held(self.stream.socket())?;
         let receive = asdu.receive;
         let negative = negative_confirmation(&asdu.bytes);
         let counter = Arc::clone(&self.sent);
@@ -196,7 +198,7 @@ impl Station {
 
 impl Open for Station {
     fn socket(&self) -> &TcpStream {
-        &self.stream
+        self.stream.socket()
     }
 }
 
@@ -215,7 +217,7 @@ fn negative_confirmation(asdu: &[u8]) -> Option<Vec<u8>> {
     Some(mirrored)
 }
 
-fn write(stream: &mut TcpStream, apdu: &Apdu) -> Result<()> {
+fn write(stream: &mut impl Write, apdu: &Apdu) -> Result<()> {
     stream
         .write_all(&apci::encode(apdu)?)
         .map_err(|e| classify("writing an APDU", &e))?;

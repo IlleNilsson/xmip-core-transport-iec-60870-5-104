@@ -49,6 +49,7 @@ use std::time::Duration;
 pub use apci::{Apdu, MAX_ASDU};
 pub use station::{Asdu, Station};
 use transport::ArrivalIdentity;
+use transport::deadline::Within;
 use transport::error::{Result, TransportError, classify, protocol_error};
 use transport::listening::{Accepting, Listening};
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
@@ -212,7 +213,7 @@ impl Iec104Transport {
     /// Where the connection could not be accepted.
     pub fn accept_one(&self, listener: &TcpListener) -> Result<Station> {
         let (stream, peer) = socket::accept_tcp(listener, self.timeout)?;
-        Ok(Station::new(stream, peer))
+        Ok(Station::new(Within::new(stream), peer))
     }
 
     /// Connect to the controlled station at `target` and start data
@@ -322,6 +323,13 @@ impl Configured for Iec104Transport {
             Some(timeout) => transport.timing_out_after(timeout),
             None => transport,
         })
+    }
+
+    /// Each controlling station's turn on a Receive Location taking at
+    /// most `turn`.
+    fn turning_within(mut self, turn: Duration) -> Self {
+        self.receiving = self.receiving.turning_within(turn);
+        self
     }
 }
 

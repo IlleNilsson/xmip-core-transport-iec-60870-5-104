@@ -58,7 +58,7 @@ use transport::serving::Serving;
 use transport::socket;
 use transport::{Arrived, Configured, Directions, Taken, Transport};
 use transport::{Pool, Pooled};
-use xcore::settings::{Applies, Kind, Presence, Read, Setting, Settings};
+use xcore::settings::{Applies, Read, Settings};
 
 /// The controlling station's side of one connection, data transfer started.
 pub struct Controller {
@@ -192,13 +192,6 @@ impl Iec104Transport {
         }
     }
 
-    /// Give up on a peer that stops mid-APDU.
-    #[must_use]
-    pub const fn timing_out_after(mut self, timeout: Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
     /// Bind and report the address actually assigned.
     ///
     /// # Errors
@@ -304,25 +297,23 @@ impl Configured for Iec104Transport {
     /// the station its target names.
     const SETTINGS: &'static Settings = &Settings {
         technology: env!("CARGO_PKG_NAME"),
-        settings: &[Setting {
-            name: "timeout",
-            kind: Kind::Duration,
-            presence: Presence::Optional,
-            meaning: "How long a connection is waited for, and a peer that stops mid-APDU \
-                      is waited on; unbounded when left out.",
-            applies: Applies::Both,
-        }],
+        settings: &[transport::configured::timeout(
+            Applies::Both,
+            None,
+            "How long a connection is waited for, and a peer that stops mid-APDU \
+             is waited on; unbounded when left out.",
+        )],
     };
 
     /// The schemes a Location's address is entered with to choose this technology.
     const SCHEMES: &'static [&'static str] = &["iec104"];
 
-    fn configured(address: &str, settings: &Read) -> Result<Self> {
-        let transport = Self::new(address);
-        Ok(match settings.optional_duration("timeout") {
-            Some(timeout) => transport.timing_out_after(timeout),
-            None => transport,
-        })
+    fn timeout_kept(&mut self) -> Option<&mut dyn transport::configured::TimeoutKept> {
+        Some(&mut self.timeout)
+    }
+
+    fn configured(address: &str, _settings: &Read) -> Result<Self> {
+        Ok(Self::new(address))
     }
 
     /// Each controlling station's turn on a Receive Location taking at

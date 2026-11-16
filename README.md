@@ -2,7 +2,7 @@
 
 IEC 60870-5-104 transport: one ASDU is one Stream, the APCI sequence numbers beside it; a Location listens as the controlled station or connects as the controlling one. A technology of [xmip-core-transport](https://github.com/IlleNilsson/xmip-core-transport).
 
-A Receive Location keeps its listener, bound on the first receive (`transport::serving::Serving`): a peer that connects between two receives is queued and taken by the next, where until 2026-09-27 each receive bound a listener of its own and a peer between receives was refused.
+A Receive Location keeps its listener, bound as its transport is opened (`Configured::listening`; on its first receive until 2026-11-16) (`transport::serving::Serving`): a peer that connects between two receives is queued and taken by the next, where until 2026-09-27 each receive bound a listener of its own and a peer between receives was refused.
 
 ## Acknowledgement
 

@@ -175,7 +175,7 @@ pub struct Iec104Transport {
     /// The connection kept to each controlled station, data transfer
     /// started, shared by every clone.
     controllers: Pool<Controller>,
-    /// The listener the first receive binds, and the controlling stations'
+    /// The listener its open binds, and the controlling stations'
     /// connections kept open on it between their I frames.
     receiving: Serving<Station>,
 }
@@ -257,7 +257,7 @@ impl Transport for Iec104Transport {
     }
 
     /// The next ASDU from whichever controlling station sends first, on the
-    /// listener the first receive bound and kept, whole. The station waits
+    /// listener its open bound and kept, whole. The station waits
     /// for its S frame until the receive cycle has ended: sent on accepted;
     /// on refused a command is confirmed negatively and anything else
     /// acknowledged, neither sent again ([`Station::next_arrival`]); on
@@ -265,7 +265,6 @@ impl Transport for Iec104Transport {
     /// sends it again.
     fn receive_up_to(&self, _most: usize) -> Result<Vec<Arrived>> {
         let arrived = self.receiving.next(
-            || self.bind(),
             self.timeout,
             |stream, peer| Ok(Station::new(stream, peer)),
             Station::turn,
@@ -327,6 +326,12 @@ impl Configured for Iec104Transport {
     fn timed_by(mut self, clock: &std::sync::Arc<dyn xcore::Clock>) -> Self {
         self.receiving = self.receiving.timed_by(clock);
         self
+    }
+
+    /// The listener every receive takes from, bound where a Receive
+    /// Location listens for controlling stations.
+    fn listening(&self) -> Result<Option<&str>> {
+        self.receiving.bound(|| self.bind()).map(Some)
     }
 }
 

@@ -38,29 +38,46 @@
 //! connected, said STARTDT, sent its one I frame and STOPDT.
 //!
 //! The origin URI carries what the APCI knew: `iec104://peer?send=5`.
+//!
+//! **Built with its `declaration` feature alone** the crate is
+//! [`declaration`], what a Location of it is configured with, and none of
+//! the code above, which is behind the default feature: what the surfaces'
+//! library carries (ADR-0064, amendment 2026-11-26).
 
+#[cfg(feature = "default")]
 pub mod apci;
+#[cfg(feature = "declaration")]
+pub mod declaration;
+#[cfg(feature = "default")]
 pub mod station;
 
-use std::io::Write;
-use std::net::{TcpListener, TcpStream};
-use std::time::Duration;
+#[cfg(feature = "default")]
+use std::{
+    io::Write,
+    net::{TcpListener, TcpStream},
+    time::Duration,
+};
 
+#[cfg(feature = "default")]
 pub use apci::{Apdu, MAX_ASDU};
+#[cfg(feature = "default")]
 pub use station::{Asdu, Station};
-use transport::ArrivalIdentity;
-use transport::deadline::Within;
-use transport::error::{Result, TransportError, classify, protocol_error};
-use transport::listening::{Accepting, Listening};
-use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
-use transport::pool::alive;
-use transport::serving::Serving;
-use transport::socket;
-use transport::{Arrived, Configured, Directions, Taken, Transport};
-use transport::{Pool, Pooled};
-use xcore::settings::{Applies, Read, Settings};
+#[cfg(feature = "default")]
+use transport::{
+    ArrivalIdentity, Arrived, Configured, Directions, Pool, Pooled, Taken, Transport,
+    deadline::Within,
+    error::{Result, TransportError, classify, protocol_error},
+    listening::{Accepting, Listening},
+    loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback},
+    pool::alive,
+    serving::Serving,
+    socket,
+};
+#[cfg(feature = "default")]
+use xcore::settings::{Read, Settings};
 
 /// The controlling station's side of one connection, data transfer started.
+#[cfg(feature = "default")]
 pub struct Controller {
     stream: TcpStream,
     sent: u16,
@@ -69,6 +86,7 @@ pub struct Controller {
     closed: bool,
 }
 
+#[cfg(feature = "default")]
 impl Pooled for Controller {
     /// Kept while the station holds the connection open; a TESTFR it sent
     /// meanwhile is answered by the next send.
@@ -77,6 +95,7 @@ impl Pooled for Controller {
     }
 }
 
+#[cfg(feature = "default")]
 impl Controller {
     /// Send `asdu` as one I frame and wait for it to be acknowledged.
     ///
@@ -168,6 +187,7 @@ impl Controller {
     }
 }
 
+#[cfg(feature = "default")]
 #[derive(Clone)]
 pub struct Iec104Transport {
     bind: String,
@@ -180,6 +200,7 @@ pub struct Iec104Transport {
     receiving: Serving<Station>,
 }
 
+#[cfg(feature = "default")]
 impl Iec104Transport {
     /// Listen or connect at `bind`; `0.0.0.0:2404` is the standard port.
     #[must_use]
@@ -234,6 +255,7 @@ impl Iec104Transport {
     }
 }
 
+#[cfg(feature = "default")]
 impl Transport for Iec104Transport {
     fn name(&self) -> &'static str {
         "iec-60870-5-104"
@@ -290,22 +312,10 @@ impl Transport for Iec104Transport {
     }
 }
 
+#[cfg(feature = "default")]
 impl Configured for Iec104Transport {
-    /// The address is where a Receive Location listens as the controlled
-    /// station, `0.0.0.0:2404` by the standard; a Send Location connects to
-    /// the station its target names.
-    const SETTINGS: &'static Settings = &Settings {
-        technology: env!("CARGO_PKG_NAME"),
-        settings: &[transport::configured::timeout(
-            Applies::Both,
-            None,
-            "How long a connection is waited for, and a peer that stops mid-APDU \
-             is waited on; unbounded when left out.",
-        )],
-    };
-
-    /// The schemes a Location's address is entered with to choose this technology.
-    const SCHEMES: &'static [&'static str] = &["iec104"];
+    const SETTINGS: &'static Settings = declaration::SETTINGS;
+    const SCHEMES: &'static [&'static str] = declaration::SCHEMES;
 
     fn timeout_kept(&mut self) -> Option<&mut dyn transport::configured::TimeoutKept> {
         Some(&mut self.timeout)
@@ -335,6 +345,7 @@ impl Configured for Iec104Transport {
     }
 }
 
+#[cfg(feature = "default")]
 impl Iec104Transport {
     /// Both ends on this machine: an ephemeral local port, the loopback
     /// timeout on either station.
@@ -344,6 +355,7 @@ impl Iec104Transport {
     }
 }
 
+#[cfg(feature = "default")]
 impl Accepting for Iec104Transport {
     fn take_one(self, listener: &TcpListener) -> Result<Taken> {
         let mut station = self.accept_one(listener)?;
@@ -360,6 +372,7 @@ impl Accepting for Iec104Transport {
 
 /// A Stream longer than one ASDU travels as I frames in sequence on one
 /// connection, each acknowledged before the next goes, STOPDT closing.
+#[cfg(feature = "default")]
 impl Loopback for Iec104Transport {
     fn arrival_identity(&self) -> ArrivalIdentity {
         ArrivalIdentity::PEER
@@ -471,7 +484,7 @@ mod tests {
 
     #[test]
     fn iec_60870_5_104_declares_its_settings_and_reads_through_them() {
-        use xcore::settings::Given;
+        use xcore::settings::{Applies, Given};
         assert_eq!(Iec104Transport::SETTINGS.problems(), Vec::<String>::new());
         let given = [("timeout".to_string(), Given::Text("20s".to_string()))];
         let built = Iec104Transport::open("0.0.0.0:2404", Applies::Receive, &given).expect("built");

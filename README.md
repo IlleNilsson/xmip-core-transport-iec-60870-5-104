@@ -31,7 +31,7 @@ its one I frame and STOPDT.
 
 ## The declaration
 
-What a Location of this technology is configured with is two `const`s in its `declaration` module, `src/declaration.rs`, beside the code, which `Configured` reads (ADR-0064, amendment 2026-11-26): `declaration::SETTINGS`, `timeout`, and `SCHEMES`, `iec104`. Built with its `declaration` feature alone (`--no-default-features --features declaration`), the crate is those and nothing more: its code is behind the default feature. So the library the surfaces load can carry it without the code, for the language server and the desktop to suggest and check an IEC 104 Location's settings though no node in their process loaded the technology, once the gathering crate of open problem 48 links it. `test/Declaration.Test.ps1` in the estate holds that the declaration builds nothing the transport capability does not.
+What a Location of this technology is configured with is two `const`s in its `declaration` module, `src/declaration.rs`, beside the code, which `Configured` reads (ADR-0064, amendment 2026-11-26): `declaration::SETTINGS`, `timeout`, and `SCHEMES`, `iec104`. Built with its `declaration` feature alone (`--no-default-features --features declaration`), the crate is those and nothing more: its code is behind the default feature. So the library the surfaces load carries it without the code, through the gathering crate xmip-core-declaration (open problem 48), and the language server and the desktop suggest and check an IEC 104 Location's settings though no node in their process loaded the technology. `test/Declaration.Test.ps1` in the estate holds that the declaration builds nothing the transport capability does not.
 
 ## Toolchain
 
